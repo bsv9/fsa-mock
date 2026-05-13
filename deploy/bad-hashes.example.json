@@ -1,0 +1,20 @@
+[
+  {
+    "sha256": "622c9fd9edf69e2b4e783f24033c2afe41f83daa",
+    "malware_name": "Demo.Mailware",
+    "score": 100,
+    "category": "Malware"
+  },
+  {
+    "md5": "92154a5c776b2fd2ac5e9e4d219ddc9892133018",
+    "malware_name": "Demo.Mailware",
+    "score": 100,
+    "category": "Malware"
+  },
+  {
+    "sha256": "7cbd3f787e2fd9308876984955084b79417095a0",
+    "malware_name": "Demo.Suspicious",
+    "score": 70,
+    "category": "Suspicious"
+  }
+]

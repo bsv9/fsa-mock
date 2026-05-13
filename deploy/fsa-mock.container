@@ -1,0 +1,39 @@
+# Podman Quadlet unit for the FortiSandbox API mock service.
+#
+# The service speaks plain HTTP. Terminate TLS in an upstream nginx and
+# proxy to this container on port 8080.
+#
+# Install (system-wide):
+#   sudo cp deploy/fsa-mock.container /etc/containers/systemd/
+#   sudo cp deploy/fsa-mock.env       /etc/fsa-mock.env       # optional
+#   sudo systemctl daemon-reload
+#   sudo systemctl start fsa-mock.service
+#
+# For rootless deployment, copy to ~/.config/containers/systemd/ and use
+# `systemctl --user`.
+
+[Unit]
+Description=FortiSandbox API mock service
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/bsv9/fsa-mock:latest
+ContainerName=fsa-mock
+
+# Bind to loopback so only the upstream nginx can reach the service.
+# Change to 0.0.0.0:8080 if nginx runs on a different host.
+PublishPort=127.0.0.1:18080:8080
+
+EnvironmentFile=-/etc/fsa-mock.env
+
+ReadOnly=true
+NoNewPrivileges=true
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+
+[Install]
+WantedBy=multi-user.target default.target
