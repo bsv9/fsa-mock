@@ -33,6 +33,13 @@ type Config struct {
 	DefaultScore       int
 	DefaultCategory    string
 
+	// Simulated scan duration. When a job is created it becomes "ready" after
+	// a random delay uniformly drawn from [ScanDelayMinSec, ScanDelayMaxSec].
+	// Until then /scan/result/job returns scan_status=0 (pending). Defaults
+	// to 5..30 seconds; set both to 0 to disable the delay.
+	ScanDelayMinSec int
+	ScanDelayMaxSec int
+
 	BadHashes []BadHash
 }
 
@@ -45,6 +52,11 @@ func Load() (*Config, error) {
 		DefaultCategory:    envOr("FSA_CATEGORY", "Malware"),
 	}
 	c.DefaultScore = envInt("FSA_SCORE", 90)
+	c.ScanDelayMinSec = envInt("FSA_SCAN_DELAY_MIN", 5)
+	c.ScanDelayMaxSec = envInt("FSA_SCAN_DELAY_MAX", 30)
+	if c.ScanDelayMaxSec < c.ScanDelayMinSec {
+		return nil, fmt.Errorf("FSA_SCAN_DELAY_MAX (%d) < FSA_SCAN_DELAY_MIN (%d)", c.ScanDelayMaxSec, c.ScanDelayMinSec)
+	}
 
 	// Bad hashes can be supplied either as a JSON file (FSA_BAD_HASHES_FILE)
 	// or as a comma-separated list of sha256/sha1/md5 hex strings (FSA_BAD_HASHES).

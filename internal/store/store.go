@@ -1,6 +1,9 @@
 package store
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 type FileHashes struct {
 	Sha256   string
@@ -9,18 +12,23 @@ type FileHashes struct {
 	Filename string
 }
 
-// Store keeps in-memory mappings sid → file hashes and jid → sid, as required
-// by the spec. It is safe for concurrent use.
+type jobInfo struct {
+	sid     string
+	readyAt time.Time
+}
+
+// Store keeps in-memory mappings sid → file hashes and jid → job info, as
+// required by the spec. It is safe for concurrent use.
 type Store struct {
-	mu       sync.RWMutex
-	bySid    map[string]FileHashes
-	jidToSid map[string]string
+	mu    sync.RWMutex
+	bySid map[string]FileHashes
+	byJid map[string]jobInfo
 }
 
 func New() *Store {
 	return &Store{
-		bySid:    make(map[string]FileHashes),
-		jidToSid: make(map[string]string),
+		bySid: make(map[string]FileHashes),
+		byJid: make(map[string]jobInfo),
 	}
 }
 
@@ -30,19 +38,25 @@ func (s *Store) PutSubmission(sid string, h FileHashes) {
 	s.bySid[sid] = h
 }
 
-func (s *Store) PutJob(jid, sid string) {
+// PutJob registers a jid for a sid. readyAt is the wall-clock time at which
+// the scan is considered complete; pass time.Now() to mark it ready immediately.
+func (s *Store) PutJob(jid, sid string, readyAt time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.jidToSid[jid] = sid
+	s.byJid[jid] = jobInfo{sid: sid, readyAt: readyAt}
 }
 
-func (s *Store) HashesByJid(jid string) (FileHashes, string, bool) {
+// JobInfo returns hashes, sid, and the scan ready time for jid.
+func (s *Store) JobInfo(jid string) (FileHashes, string, time.Time, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sid, ok := s.jidToSid[jid]
+	ji, ok := s.byJid[jid]
 	if !ok {
-		return FileHashes{}, "", false
+		return FileHashes{}, "", time.Time{}, false
 	}
-	h, ok := s.bySid[sid]
-	return h, sid, ok
+	h, ok := s.bySid[ji.sid]
+	if !ok {
+		return FileHashes{}, "", time.Time{}, false
+	}
+	return h, ji.sid, ji.readyAt, true
 }

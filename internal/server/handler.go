@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"hash"
@@ -145,8 +146,10 @@ func (h *handler) jobsOfSubmission(w http.ResponseWriter, req *jsonrpc.Request, 
 	_ = json.Unmarshal(req.Params[0], &p)
 
 	jid := p.Sid + "_0"
-	h.store.PutJob(jid, p.Sid)
-	log.Printf("  jobs sid=%s -> jid=%s", p.Sid, jid)
+	delay := h.pickScanDelay()
+	readyAt := time.Now().Add(delay)
+	h.store.PutJob(jid, p.Sid, readyAt)
+	log.Printf("  jobs sid=%s -> jid=%s scan_delay=%s ready_at=%s", p.Sid, jid, delay, readyAt.Format(time.RFC3339))
 
 	writeJSON(w, jsonrpc.Response{
 		ID: req.ID,
@@ -165,15 +168,36 @@ func (h *handler) scanResult(w http.ResponseWriter, req *jsonrpc.Request, ip str
 	}
 	_ = json.Unmarshal(req.Params[0], &p)
 
-	hashes, sid, ok := h.store.HashesByJid(p.Jid)
+	hashes, sid, readyAt, ok := h.store.JobInfo(p.Jid)
 	if !ok {
 		log.Printf("  result jid=%s UNKNOWN", p.Jid)
 		writeStatusError(w, req, "/scan/result/job", 3, "unknown jid")
 		return
 	}
 
+	nowT := time.Now()
+	if nowT.Before(readyAt) {
+		remaining := readyAt.Sub(nowT)
+		log.Printf("  result jid=%s sid=%s PENDING remaining=%s", p.Jid, sid, remaining)
+		writeJSON(w, jsonrpc.Response{
+			ID: req.ID,
+			Result: &jsonrpc.Result{
+				URL:    "/scan/result/job",
+				Status: jsonrpc.Status{Code: 0, Message: "OK"},
+				Data: map[string]interface{}{
+					"jid":           p.Jid,
+					"sid":           sid,
+					"scan_status":   0,
+					"now":           nowT.Unix(),
+					"error_message": nil,
+				},
+			},
+		})
+		return
+	}
+
 	bad, match := h.matchBad(hashes)
-	now := time.Now().Unix()
+	now := nowT.Unix()
 
 	data := map[string]interface{}{
 		"jid":                     p.Jid,
@@ -293,6 +317,28 @@ func pickStr(a, b string) string {
 	}
 	return b
 }
+// pickScanDelay returns a random delay drawn uniformly from
+// [ScanDelayMinSec, ScanDelayMaxSec] seconds. Returns 0 when both are 0.
+func (h *handler) pickScanDelay() time.Duration {
+	lo, hi := h.cfg.ScanDelayMinSec, h.cfg.ScanDelayMaxSec
+	if lo < 0 {
+		lo = 0
+	}
+	if hi < lo {
+		hi = lo
+	}
+	if hi == 0 {
+		return 0
+	}
+	span := uint64(hi - lo + 1)
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return time.Duration(lo) * time.Second
+	}
+	n := binary.BigEndian.Uint64(b[:]) % span
+	return time.Duration(uint64(lo)+n) * time.Second
+}
+
 func pickInt(a, b int) int {
 	if a != 0 {
 		return a
